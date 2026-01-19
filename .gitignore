@@ -1,0 +1,18 @@
+# Bytecode cache
+__pycache__/
+.pycache/
+
+# Output and log files
+Process.txt
+ProcessLog.txt
+
+
+# Ignore everything in process/output/ except the folder
+process/output/*
+!process/output/
+
+# Config (optional: include this only if config.json is user-specific or secret)
+sources/common/config.json
+
+aiAgent_env
+aiAgent_env/*

@@ -1,6 +1,7 @@
 from sources import global_vars
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
 
 class controlProcess():
@@ -41,10 +42,11 @@ class ColoredFormatter(logging.Formatter):
         return f"{color}{message}{COLORS['reset']}"
 
 def configureLogger(type="log", loggerName="deepMountainLog"):
+    base_path = os.path.realpath(os.getcwd())
     if type == "log":
-        logFilePath = "./ProcessLog.txt"
+        logFilePath = os.path.join(base_path, "ProcessLog.txt")
     elif type == "proc":
-        logFilePath = "./Process.txt"
+        logFilePath = os.path.join(base_path, "Process.txt")
     logger = logging.getLogger(loggerName)
 
     if not logger.hasHandlers():
