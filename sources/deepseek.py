@@ -48,21 +48,26 @@ class DeepSeekAutomator:
             # Los selectores pueden variar - probar diferentes opciones
             upload_selectors = [
                 'button[aria-label*="upload"]',
-                'div.ds-icon-button__hover-bg'
+                'div.ds-icon-button--sizing-container'
             ]
+
 
             # Primero intentar encontrar directamente el input file
             file_input = page.locator('input[type="file"]')
             if await file_input.count() > 0:
+                writeLog("info", logger, "file input found")
                 await file_input.set_input_files(pdf_path)
                 await page.wait_for_timeout(3000)
                 print(f"✓ PDF subido directamente: {os.path.basename(pdf_path)}")
-                return True
+                return True            
+
+
 
             # Si no, buscar botón de upload
             upload_button = None
             for selector in upload_selectors:
                 if await page.locator(selector).count() > 0:
+                    writeLog("info", logger, "file locator found")
                     upload_button = page.locator(selector).first
                     break
 
