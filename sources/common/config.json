@@ -1,0 +1,21 @@
+{
+    "environment": "intecca",
+    "uid": "EGA",
+    "defaults": {
+        "headless": false,
+        "timeout": 40,
+        "delay_between_prompts": 5,
+        "max_questions_per_hour": 50,
+        "output_dir": "./resultados",
+        "save_screenshots": false
+    },
+    "storage": {
+        "processes": {
+            "input": "results/input",
+            "output": "results/output",
+            "results": "results",
+            "logs": "",
+            "cache": ".pycache"
+        }
+    }
+}
