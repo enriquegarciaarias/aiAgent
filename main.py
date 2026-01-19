@@ -4,10 +4,12 @@
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 from sources.common.common import logger, processControl, writeLog
 from sources.deepseek import processAI
+from sources.paramsManager import getConfigs
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    getConfigs()
     processAI()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/

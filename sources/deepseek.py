@@ -1,5 +1,4 @@
 from sources.common.common import logger, processControl, writeLog
-
 import asyncio
 import json
 import pandas as pd
@@ -7,6 +6,7 @@ from playwright.async_api import async_playwright
 import time
 from datetime import datetime
 import csv
+import os
 
 
 class DeepSeekAutomator:
@@ -30,42 +30,150 @@ class DeepSeekAutomator:
 
     async def login_if_needed(self, page):
         """Maneja login si es necesario"""
-        # Verifica si ya estás logueado
         await page.goto(self.base_url)
         await page.wait_for_timeout(3000)
 
-        # Si hay campo de login, completa con tus credenciales
-        # Ajusta según la página actual de DeepSeek
         login_input = page.locator('input[type="email"], input[type="text"]').first
         if await login_input.is_visible():
             await login_input.fill("ega364620916@proton.me")
             await page.locator('input[type="password"]').fill("barcelona92")
-            await page.locator('button:has-text("Log in"), button:has-text("登录"), button:has-text("Sign in"), button:has-text("Iniciar sesión")').first.click()
+            await page.locator(
+                'button:has-text("Log in"), button:has-text("登录"), button:has-text("Sign in"), button:has-text("Iniciar sesión")').first.click()
             await page.wait_for_timeout(5000)
 
-    async def send_prompt(self, page, prompt, wait_time=30):
-        """Envía un prompt y recoge la respuesta"""
+    async def upload_pdf(self, page, pdf_path):
+        """Sube un archivo PDF a la conversación"""
         try:
-            # Localiza el textarea/input para el prompt
-            # (Ajusta estos selectores según la interfaz actual)
-            textarea = page.locator('textarea, [contenteditable="true"], .prompt-input')
-            await textarea.wait_for(state='visible')
+            # Esperar a que el botón de adjuntar archivo esté disponible
+            # Los selectores pueden variar - probar diferentes opciones
+            upload_selectors = [
+                'button[aria-label*="upload"]',
+                'div.ds-icon-button__hover-bg'
+            ]
+
+            # Primero intentar encontrar directamente el input file
+            file_input = page.locator('input[type="file"]')
+            if await file_input.count() > 0:
+                await file_input.set_input_files(pdf_path)
+                await page.wait_for_timeout(3000)
+                print(f"✓ PDF subido directamente: {os.path.basename(pdf_path)}")
+                return True
+
+            # Si no, buscar botón de upload
+            upload_button = None
+            for selector in upload_selectors:
+                if await page.locator(selector).count() > 0:
+                    upload_button = page.locator(selector).first
+                    break
+
+            if upload_button and await upload_button.is_visible():
+                await upload_button.click()
+                await page.wait_for_timeout(1000)
+
+                # Ahora debería aparecer el input file
+                file_input = page.locator('input[type="file"]')
+                if await file_input.count() > 0:
+                    await file_input.set_input_files(pdf_path)
+                    await page.wait_for_timeout(3000)
+                    print(f"✓ PDF subido: {os.path.basename(pdf_path)}")
+
+                    # Esperar a que se complete la carga (verificar que aparece en la conversación)
+                    await page.wait_for_timeout(2000)
+                    return True
+                else:
+                    # Si no aparece input, intentar con diálogo nativo
+                    async with page.expect_file_chooser() as fc_info:
+                        await upload_button.click()
+                    file_chooser = await fc_info.value
+                    await file_chooser.set_files(pdf_path)
+                    await page.wait_for_timeout(3000)
+                    print(f"✓ PDF subido mediante diálogo: {os.path.basename(pdf_path)}")
+                    return True
+
+            print("⚠ No se encontró el botón de subida de archivos")
+            return False
+
+        except Exception as e:
+            print(f"✗ Error subiendo PDF: {e}")
+            return False
+
+    async def send_prompt(self, page, prompt, pdf_path=None, wait_time=30):
+        """Envía un prompt y recoge la respuesta, opcionalmente con PDF adjunto"""
+        try:
+            # Subir PDF primero si se especifica
+            if pdf_path and os.path.exists(pdf_path):
+                print(f"Subiendo PDF: {pdf_path}")
+                upload_success = await self.upload_pdf(page, pdf_path)
+                if not upload_success:
+                    print("⚠ Continuando sin el PDF...")
+                await page.wait_for_timeout(3000)  # Esperar después de subir
+
+            # Localizar el textarea/input para el prompt
+            # Selectores comunes para el campo de entrada
+            textarea_selectors = [
+                'textarea[placeholder*="Message"]',
+                'textarea[placeholder*="mensaje"]',
+                'textarea[placeholder*="escribe"]',
+                'div[contenteditable="true"]',
+                '.prompt-input',
+                'input[type="text"]',
+                '[role="textbox"]',
+                '[data-testid="message-input"]'
+            ]
+
+            textarea = None
+            for selector in textarea_selectors:
+                if await page.locator(selector).count() > 0:
+                    textarea = page.locator(selector).first
+                    break
+
+            if not textarea:
+                # Último recurso: cualquier textarea
+                textarea = page.locator('textarea').first
+
+            await textarea.wait_for(state='visible', timeout=5000)
             await textarea.click()
             await textarea.fill(prompt)
 
-            # Envía el prompt (Enter o botón Send)
+            # Enviar el prompt
             await textarea.press('Enter')
+            print(f"✓ Prompt enviado")
 
-            # Espera a que la respuesta esté completa
-            # Busca el último mensaje de respuesta
+            # Esperar a que la respuesta esté completa
             await page.wait_for_timeout(wait_time * 1000)
 
-            # Extrae la respuesta (ajusta el selector)
-            response_locator = page.locator('.message-content, .ds-scroll-area .ds-markdown, [data-testid="message"]').last
-            response = await response_locator.text_content()
+            # Extraer la respuesta - selectores comunes para respuestas
+            response_selectors = [
+                '.message-content',
+                '.ds-markdown',
+                '.prose',
+                '[data-testid="message"]',
+                '.chat-message',
+                '.response-content',
+                'div.markdown'
+            ]
+
+            response = None
+            for selector in response_selectors:
+                elements = page.locator(selector)
+                if await elements.count() > 0:
+                    # Tomar el último elemento (la respuesta más reciente)
+                    response_locator = elements.last
+                    response = await response_locator.text_content(timeout=5000)
+                    if response and len(response.strip()) > 10:  # Validar que tenga contenido
+                        break
+
+            if not response:
+                # Intentar selector más genérico
+                all_messages = page.locator('.message, .chat-message, [class*="message"]')
+                count = await all_messages.count()
+                if count > 0:
+                    response_locator = all_messages.last
+                    response = await response_locator.text_content(timeout=5000)
 
             return {
                 'prompt': prompt,
+                'pdf': os.path.basename(pdf_path) if pdf_path else None,
                 'response': response.strip() if response else '',
                 'timestamp': datetime.now().isoformat(),
                 'wait_time': wait_time
@@ -75,31 +183,62 @@ class DeepSeekAutomator:
             print(f"Error procesando prompt: {e}")
             return None
 
-    async def run_questionnaire(self, questions, output_file="resultados.csv"):
-        """Ejecuta un cuestionario completo"""
+    async def run_questionnaire(self, questions, pdf_files=None, output_file="resultados.csv"):
+        """Ejecuta un cuestionario completo con posibilidad de adjuntar PDFs"""
         playwright, browser, page = await self.setup_browser()
 
         try:
-            # Navega a la página
+            # Navegar a la página
             await self.login_if_needed(page)
             await page.wait_for_timeout(5000)
 
-            # Procesa cada pregunta
-            for i, question in enumerate(questions):
-                print(f"Procesando pregunta {i + 1}/{len(questions)}: {question[:50]}...")
+            # Si pdf_files es un string, convertirlo a lista
+            if pdf_files and isinstance(pdf_files, str):
+                pdf_files = [pdf_files]
 
-                result = await self.send_prompt(page, question)
+            # Si pdf_files es una lista pero hay menos que preguntas, repetir el último
+            if pdf_files and len(pdf_files) < len(questions):
+                pdf_files = pdf_files * (len(questions) // len(pdf_files) + 1)
+                pdf_files = pdf_files[:len(questions)]
+
+            # Procesar cada pregunta
+            for i, question in enumerate(questions):
+                print(f"\n{'=' * 60}")
+                print(f"Procesando pregunta {i + 1}/{len(questions)}")
+                print(f"Pregunta: {question[:80]}...")
+
+                # Obtener PDF correspondiente si existe
+                pdf_path = pdf_files[i] if pdf_files and i < len(pdf_files) else None
+
+                result = await self.send_prompt(
+                    page,
+                    question,
+                    pdf_path=pdf_path,
+                    wait_time=35  # Más tiempo si hay PDF
+                )
+
                 if result:
                     self.results.append(result)
-                    print(f"✓ Respuesta obtenida ({len(result['response'])} caracteres)")
+                    char_count = len(result['response'])
+                    print(f"✓ Respuesta obtenida ({char_count} caracteres)")
 
-                # Espera entre preguntas para evitar rate limiting
-                await page.wait_for_timeout(5000)
+                    # Guardar progreso incrementalmente
+                    if i % 3 == 0:  # Cada 3 preguntas
+                        self.save_results(f"progress_{output_file}")
 
-            # Guarda resultados
+                # Esperar entre preguntas
+                await page.wait_for_timeout(7000)  # Más tiempo entre preguntas
+
+            # Guardar resultados finales
             self.save_results(output_file)
-            print(f"\n✅ Cuestionario completado. Resultados en {output_file}")
+            print(f"\n{'=' * 60}")
+            print(f"✅ Cuestionario completado. Resultados en {output_file}")
 
+        except Exception as e:
+            print(f"Error en run_questionnaire: {e}")
+            # Guardar resultados obtenidos hasta ahora
+            if self.results:
+                self.save_results(f"partial_{output_file}")
         finally:
             await browser.close()
             await playwright.stop()
@@ -123,34 +262,8 @@ class DeepSeekAutomator:
         excel_file = filename.replace('.csv', '.xlsx')
         df.to_excel(excel_file, index=False)
 
+        print(f"📁 Resultados guardados en {filename}")
         return df
-
-
-# Ejemplo de uso
-async def main():
-    # Lista de preguntas/prompts
-    questions = [
-        "Explícame la teoría de la relatividad en términos simples",
-        "¿Cuáles son las ventajas de Python sobre otros lenguajes?",
-    ]
-
-    automator = DeepSeekAutomator()
-
-    # Opción 1: Ejecutar cuestionario completo
-    await automator.run_questionnaire(
-        questions=questions,
-        output_file="deepseek_responses.csv"
-    )
-
-    # Opción 2: Modo interactivo para debugging
-    # playwright, browser, page = await automator.setup_browser()
-    # await automator.login_if_needed(page)
-    # resultado = await automator.send_prompt(page, "Hola, ¿cómo estás?")
-    # print(resultado)
-
-
-def processAI():
-    asyncio.run(main())
 
 
 class EnhancedDeepSeekAutomator(DeepSeekAutomator):
@@ -164,8 +277,9 @@ class EnhancedDeepSeekAutomator(DeepSeekAutomator):
             "headless": True,
             "timeout": 45,
             "retry_attempts": 3,
-            "delay_between_prompts": 3,
-            "output_formats": ["csv", "json", "excel"]
+            "delay_between_prompts": 7,
+            "output_formats": ["csv", "json", "excel"],
+            "max_pdf_size_mb": 10
         }
         try:
             with open(config_file, 'r') as f:
@@ -175,12 +289,13 @@ class EnhancedDeepSeekAutomator(DeepSeekAutomator):
             pass
         return default_config
 
-    async def send_prompt_with_retry(self, page, prompt, attempt=1):
+    async def send_prompt_with_retry(self, page, prompt, pdf_path=None, attempt=1):
         """Envía prompt con reintentos"""
         try:
             result = await self.send_prompt(
                 page,
                 prompt,
+                pdf_path=pdf_path,
                 wait_time=self.config["timeout"]
             )
             return result
@@ -188,76 +303,128 @@ class EnhancedDeepSeekAutomator(DeepSeekAutomator):
             if attempt < self.config["retry_attempts"]:
                 print(f"Reintentando ({attempt}/{self.config['retry_attempts']})...")
                 await page.wait_for_timeout(5000)
-                return await self.send_prompt_with_retry(page, prompt, attempt + 1)
+                return await self.send_prompt_with_retry(
+                    page, prompt, pdf_path, attempt + 1
+                )
             else:
                 print(f"Error después de {attempt} intentos: {e}")
                 return None
 
-    async def batch_processing(self, questions_batch, batch_size=5):
-        """Procesa preguntas en lotes con pausas"""
-        results = []
 
-        for i in range(0, len(questions_batch), batch_size):
-            batch = questions_batch[i:i + batch_size]
-            print(f"\nProcesando lote {i // batch_size + 1}/{(len(questions_batch) + batch_size - 1) // batch_size}")
+# Funciones auxiliares
+def validate_pdf_path(pdf_path):
+    """Valida que el PDF exista y tenga el tamaño adecuado"""
+    if not os.path.exists(pdf_path):
+        print(f"✗ El archivo no existe: {pdf_path}")
+        return False
 
-            for question in batch:
-                result = await self.send_prompt_with_retry(question)
-                if result:
-                    results.append(result)
+    if not pdf_path.lower().endswith('.pdf'):
+        print(f"✗ El archivo no es un PDF: {pdf_path}")
+        return False
 
-            # Pausa entre lotes para evitar rate limiting
-            if i + batch_size < len(questions_batch):
-                print(f"Pausa de 60 segundos...")
-                await asyncio.sleep(60)
+    # Verificar tamaño (ejemplo: máximo 10MB)
+    file_size = os.path.getsize(pdf_path) / (1024 * 1024)  # MB
+    if file_size > 10:
+        print(f"✗ PDF demasiado grande ({file_size:.1f}MB > 10MB)")
+        return False
 
-        return results
+    return True
 
 
-# Cargar preguntas desde archivo
-def load_questions_from_file(filename):
-    """Carga preguntas desde diferentes formatos"""
-    if filename.endswith('.txt'):
-        with open(filename, 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f if line.strip()]
+async def main():
+    """Ejemplo de uso con PDFs"""
 
-    elif filename.endswith('.csv'):
-        df = pd.read_csv(filename)
-        return df['pregunta'].tolist() if 'pregunta' in df.columns else df.iloc[:, 0].tolist()
+    # Lista de preguntas/prompts
+    questions = [
+        "Resume los puntos principales de este documento",
+        "¿Qué metodologías se mencionan en el PDF?",
+        "Extrae las conclusiones más importantes",
+    ]
 
-    elif filename.endswith('.json'):
-        with open(filename, 'r') as f:
-            data = json.load(f)
-            return data.get('questions', [])
+    # Ruta(s) a PDF(s) - puede ser una sola para todas o una lista
+    pdf_files = [
+        "documento1.pdf",  # Para primera pregunta
+        "documento1.pdf",  # Para segunda pregunta
+        "documento2.pdf",  # Para tercera pregunta
+    ]
 
-    return []
+    # Validar PDFs
+    valid_pdfs = []
+    for pdf in pdf_files:
+        filePath = os.path.join(processControl.env.get("input", ""), pdf)
+        if validate_pdf_path(filePath):
+            valid_pdfs.append(filePath)
+        else:
+            valid_pdfs.append(None)  # Mantener estructura aunque falle
+
+    automator = DeepSeekAutomator()
+
+    # Ejecutar con PDFs
+    await automator.run_questionnaire(
+        questions=questions,
+        pdf_files=valid_pdfs,  # Pasar lista de PDFs
+        output_file="deepseek_responses_con_pdfs.csv"
+    )
+
+
+def processAI():
+    """Función principal para ejecutar el proceso"""
+    asyncio.run(main())
 
 
 # Script principal mejorado
 async def enhanced_main():
+    """Versión mejorada que carga configuraciones desde archivos"""
+
     # Cargar preguntas desde archivo
     questions = load_questions_from_file("preguntas.txt")
 
-    # O crear dinámicamente
-    if not questions:
-        questions = [
-            f"Explica el concepto de {concept} en 3 líneas"
-            for concept in ["blockchain", "quantum computing", "neural networks", "docker"]
-        ]
+    # Cargar PDFs desde configuración o lista
+    pdf_config = load_pdf_config("pdf_config.json")
 
-    # Configurar automator
     automator = EnhancedDeepSeekAutomator()
 
-    # Procesar
     await automator.run_questionnaire(
         questions=questions,
-        output_file="resultados_completos.csv"
+        pdf_files=pdf_config.get("pdf_files", []),
+        output_file="resultados_completos_con_pdfs.csv"
     )
 
-    # Análisis básico
+    # Análisis
     if automator.results:
         df = pd.DataFrame(automator.results)
         print(f"\n📊 Estadísticas:")
         print(f"- Total respuestas: {len(df)}")
+        print(f"- PDFs utilizados: {df['pdf'].notna().sum()}")
         print(f"- Longitud promedio respuesta: {df['response'].str.len().mean():.0f} caracteres")
-        print(f"- Tiempo total estimado: {len(df) * 35 / 60:.1f} minutos")
+
+
+def load_pdf_config(filename):
+    """Carga configuración de PDFs desde JSON"""
+    default_config = {"pdf_files": []}
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default_config
+
+
+# También mantener la función existente para cargar preguntas
+def load_questions_from_file(filename):
+    """Carga preguntas desde diferentes formatos"""
+    if not os.path.exists(filename):
+        return []
+
+    if filename.endswith('.txt'):
+        with open(filename, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    elif filename.endswith('.csv'):
+        df = pd.read_csv(filename)
+        return df['pregunta'].tolist() if 'pregunta' in df.columns else df.iloc[:, 0].tolist()
+    elif filename.endswith('.json'):
+        with open(filename, 'r') as f:
+            data = json.load(f)
+            return data.get('questions', [])
+    return []
+
+
