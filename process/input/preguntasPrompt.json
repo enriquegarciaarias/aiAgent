@@ -1,0 +1,8 @@
+{
+    "biblio": "Facilita la referencia bibtext de este documento",
+    "problema": "¿Qué problema aborda la investigación y qué objetivo principal persigue?\n(Identifica el foco del estudio y su alineación con necesidades educativas, especialmente en inclusión, IA o apoyo personalizado.)",
+    "metodología": "¿Qué metodología o enfoque se ha utilizado para integrar la IA en la educación, y qué tecnologías o herramientas se mencionan?\n(Analiza si usan plataformas, asistentes de IA, chatbots, análisis de datos, etc., y cómo se implementan.)",
+    "resultados": "¿Qué resultados o hallazgos relevantes se reportan en relación con la personalización del aprendizaje, la inclusión o el apoyo a estudiantes con discapacidad/dificultades?\n(Extrae evidencia cuantitativa o cualitativa sobre eficacia, mejoras en rendimiento, compromiso, accesibilidad, etc.)",
+    "limitaciones": "¿Qué limitaciones, brechas o desafíos identifica la investigación en el uso de la IA en educación, especialmente en aspectos éticos, de privacidad, sesgos o formación docente?\n(Destaca lo que falta o lo problemático, para luego contrastar con tu proyecto.)",
+    "evolucion": "¿Qué recomendaciones o futuras líneas de trabajo propone el estudio que puedan ser relevantes para tu proyecto (AERA)?\n(Identifica oportunidades de mejora, evoluciones tecnológicas, necesidades formativas, o aspectos pedagógicos a desarrollar.)"
+}

@@ -48,7 +48,10 @@ class DeepSeekAutomator:
             # Los selectores pueden variar - probar diferentes opciones
             upload_selectors = [
                 'button[aria-label*="upload"]',
-                'div.ds-icon-button--sizing-container'
+                'div.ds-icon-button--sizing-container',
+                'button.ds-icon-button--sizing-container',
+                'div[class*="ds-icon-button--sizing-container"]',
+                'button[class*="ds-icon-button--sizing-container"]'
             ]
 
 
@@ -67,7 +70,7 @@ class DeepSeekAutomator:
             upload_button = None
             for selector in upload_selectors:
                 if await page.locator(selector).count() > 0:
-                    writeLog("info", logger, "file locator found")
+                    writeLog("info", logger, "file selector locator found")
                     upload_button = page.locator(selector).first
                     break
 
@@ -83,7 +86,7 @@ class DeepSeekAutomator:
                     print(f"✓ PDF subido: {os.path.basename(pdf_path)}")
 
                     # Esperar a que se complete la carga (verificar que aparece en la conversación)
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(10000)
                     return True
                 else:
                     # Si no aparece input, intentar con diálogo nativo
@@ -111,10 +114,9 @@ class DeepSeekAutomator:
                 upload_success = await self.upload_pdf(page, pdf_path)
                 if not upload_success:
                     print("⚠ Continuando sin el PDF...")
-                await page.wait_for_timeout(3000)  # Esperar después de subir
+                await page.wait_for_timeout(50000)  # Esperar después de subir
 
             # Localizar el textarea/input para el prompt
-            # Selectores comunes para el campo de entrada
             textarea_selectors = [
                 'textarea[placeholder*="Message"]',
                 'textarea[placeholder*="mensaje"]',
@@ -197,42 +199,42 @@ class DeepSeekAutomator:
             await self.login_if_needed(page)
             await page.wait_for_timeout(5000)
 
-            # Si pdf_files es un string, convertirlo a lista
-            if pdf_files and isinstance(pdf_files, str):
-                pdf_files = [pdf_files]
+            for pdf_path in pdf_files:
 
-            # Si pdf_files es una lista pero hay menos que preguntas, repetir el último
-            if pdf_files and len(pdf_files) < len(questions):
-                pdf_files = pdf_files * (len(questions) // len(pdf_files) + 1)
-                pdf_files = pdf_files[:len(questions)]
+                # Procesar cada pregunta
+                for i, question in questions.items():
+                    resultData = []
+                    print(f"\n{'=' * 60}")
+                    print(f"Procesando pregunta {i}")
+                    print(f"Pregunta: {question[:80]}...")
 
-            # Procesar cada pregunta
-            for i, question in enumerate(questions):
-                print(f"\n{'=' * 60}")
-                print(f"Procesando pregunta {i + 1}/{len(questions)}")
-                print(f"Pregunta: {question[:80]}...")
+                    result = await self.send_prompt(
+                        page,
+                        question,
+                        pdf_path=pdf_path,
+                        wait_time=35  # Más tiempo si hay PDF
+                    )
 
-                # Obtener PDF correspondiente si existe
-                pdf_path = pdf_files[i] if pdf_files and i < len(pdf_files) else None
+                    if result:
+                        resultData.append(
+                            {i: result['response']}
+                        )
+                        char_count = len(result['response'])
+                        print(f"✓ Respuesta obtenida ({char_count} caracteres)")
 
-                result = await self.send_prompt(
-                    page,
-                    question,
-                    pdf_path=pdf_path,
-                    wait_time=35  # Más tiempo si hay PDF
+                        # Guardar progreso incrementalmente
+                        if i % 3 == 0:  # Cada 3 preguntas
+                            self.save_results(f"progress_{output_file}")
+
+                    # Esperar entre preguntas
+                    await page.wait_for_timeout(7000)  # Más tiempo entre preguntas
+
+                self.results.append(
+                    {
+                    "file": os.path.basename(pdf_path),
+                    "data": resultData,
+                    }
                 )
-
-                if result:
-                    self.results.append(result)
-                    char_count = len(result['response'])
-                    print(f"✓ Respuesta obtenida ({char_count} caracteres)")
-
-                    # Guardar progreso incrementalmente
-                    if i % 3 == 0:  # Cada 3 preguntas
-                        self.save_results(f"progress_{output_file}")
-
-                # Esperar entre preguntas
-                await page.wait_for_timeout(7000)  # Más tiempo entre preguntas
 
             # Guardar resultados finales
             self.save_results(output_file)
@@ -335,39 +337,68 @@ def validate_pdf_path(pdf_path):
 
     return True
 
+def listaPdfFiles():
+    files_path = processControl.env.get("input", "")
+    lista_pdfs = []
+
+    # Verificar si la ruta existe
+    if not os.path.exists(files_path):
+        print(f"Error: La ruta '{files_path}' no existe.")
+        return lista_pdfs
+
+    # Recorrer directorio y subdirectorios
+    for root, dirs, files in os.walk(files_path):
+        for file in files:
+            # Verificar si es un archivo PDF (por extensión)
+            if file.lower().endswith('.pdf'):
+                # Obtener ruta completa del archivo
+                pdf_path = os.path.join(root, file)
+                lista_pdfs.append(pdf_path)
+                print(f"PDF encontrado: {pdf_path}")
+
+    # Mostrar resumen
+    writeLog("info", logger, f"\nTotal de PDFs encontrados: {len(lista_pdfs)}")
+    return lista_pdfs
+
+
+def leer_json_simple(ruta_archivo):
+    """
+    Lee un archivo JSON y retorna su contenido como diccionario o lista.
+
+    Args:
+        ruta_archivo (str): Ruta del archivo JSON
+
+    Returns:
+        dict or list: Contenido del JSON
+    """
+    try:
+        with open(ruta_archivo, 'r', encoding='utf-8') as archivo:
+            datos = json.load(archivo)
+        return datos
+    except FileNotFoundError:
+        print(f"Error: El archivo '{ruta_archivo}' no existe.")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error: El archivo '{ruta_archivo}' no es un JSON válido.")
+        print(f"Detalles: {e}")
+        return None
+    except Exception as e:
+        print(f"Error inesperado: {e}")
+        return None
+
 
 async def main():
-    """Ejemplo de uso con PDFs"""
 
-    # Lista de preguntas/prompts
-    questions = [
-        "Resume los puntos principales de este documento",
-        "¿Qué metodologías se mencionan en el PDF?",
-        "Extrae las conclusiones más importantes",
-    ]
-
-    # Ruta(s) a PDF(s) - puede ser una sola para todas o una lista
-    pdf_files = [
-        "documento1.pdf",  # Para primera pregunta
-        "documento1.pdf",  # Para segunda pregunta
-        "documento2.pdf",  # Para tercera pregunta
-    ]
-
-    # Validar PDFs
-    valid_pdfs = []
-    for pdf in pdf_files:
-        filePath = os.path.join(processControl.env.get("input", ""), pdf)
-        if validate_pdf_path(filePath):
-            valid_pdfs.append(filePath)
-        else:
-            valid_pdfs.append(None)  # Mantener estructura aunque falle
+    jsonPrompt = os.path.join(processControl.env.get("input", ""), "preguntasPrompt.json")
+    questions = leer_json_simple(jsonPrompt)
+    pdf_files = listaPdfFiles()
 
     automator = DeepSeekAutomator()
 
     # Ejecutar con PDFs
     await automator.run_questionnaire(
         questions=questions,
-        pdf_files=valid_pdfs,  # Pasar lista de PDFs
+        pdf_files=pdf_files,
         output_file="deepseek_responses_con_pdfs.csv"
     )
 

@@ -1,1 +1,14 @@
 2026-01-19 14:52:56,661 [INFO] file locator found
+2026-01-20 08:52:45,512 [INFO] file input found
+2026-01-20 08:53:33,670 [INFO] file input found
+2026-01-20 08:55:53,053 [INFO] file input found
+2026-01-20 11:27:57,558 [INFO] 
+Total de PDFs encontrados: 3
+2026-01-20 12:00:39,170 [INFO] 
+Total de PDFs encontrados: 4
+2026-01-20 12:02:06,245 [INFO] 
+Total de PDFs encontrados: 4
+2026-01-20 12:02:20,936 [INFO] file input found
+2026-01-20 12:04:14,758 [INFO] 
+Total de PDFs encontrados: 4
+2026-01-20 12:04:29,454 [INFO] file input found
